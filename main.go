@@ -7,6 +7,7 @@ import (
 	"megumin/service"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 	"time"
 )
@@ -16,12 +17,16 @@ func main() {
 	exception.LogIfError(err)
 	conn.SetClientVersion(2, 2121, 17)
 
+	now := time.Now().Unix()
+	regexGroupId, err := regexp.Compile(`@g.us$`)
+
 	whatsappService := service.NewWhatsappServiceImpl()
-	whatsappHandler := handler.NewWhatsappHandlerImpl(conn)
-	conn.AddHandler(whatsappHandler)
+	whatsappHandler := handler.NewWhatsappHandlerImpl(conn, uint64(now), regexGroupId)
 
 	whatsappService.Login(conn)
 	<-time.After(3 * time.Second)
+
+	conn.AddHandler(whatsappHandler)
 
 	errChan := make(chan os.Signal, 1)
 	signal.Notify(errChan, os.Interrupt, syscall.SIGTERM)

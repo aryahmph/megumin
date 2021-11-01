@@ -24,7 +24,7 @@ func NewWhatsappServiceImpl() *WhatsappServiceImpl {
 func (service *WhatsappServiceImpl) ReadSession() (whatsapp.Session, error) {
 	session := whatsapp.Session{}
 
-	file, err := os.Open(os.TempDir() + "/whatsappSession.gob")
+	file, err := os.Open("sessions/whatsappSession.gob")
 	if err != nil {
 		return session, err
 	}
