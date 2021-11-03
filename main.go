@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -19,9 +20,14 @@ func main() {
 
 	now := time.Now().Unix()
 	regexGroupId, err := regexp.Compile(`@g.us$`)
+	regexNumber, err := regexp.Compile(`^[0-9]*$`)
+	exception.LogIfError(err)
+
+	rwMutex := new(sync.RWMutex)
+	gameService := service.NewGameServiceImpl(rwMutex)
 
 	whatsappService := service.NewWhatsappServiceImpl()
-	whatsappHandler := handler.NewWhatsappHandlerImpl(conn, uint64(now), regexGroupId)
+	whatsappHandler := handler.NewWhatsappHandlerImpl(conn, uint64(now), regexGroupId, regexNumber, gameService)
 
 	whatsappService.Login(conn)
 	<-time.After(3 * time.Second)

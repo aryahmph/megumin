@@ -10,7 +10,9 @@ import (
 	"math/rand"
 	"megumin/entity"
 	"megumin/pkg/exception"
+	"megumin/service"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -28,10 +30,12 @@ type WhatsappHandlerImpl struct {
 	conn                 *whatsapp.Conn
 	lastMessageTimestamp uint64
 	regexGroupId         *regexp.Regexp
+	regexNumber          *regexp.Regexp
+	GameService          service.GameService
 }
 
-func NewWhatsappHandlerImpl(conn *whatsapp.Conn, lastMessageTimestamp uint64, regexGroupId *regexp.Regexp) *WhatsappHandlerImpl {
-	return &WhatsappHandlerImpl{conn: conn, lastMessageTimestamp: lastMessageTimestamp, regexGroupId: regexGroupId}
+func NewWhatsappHandlerImpl(conn *whatsapp.Conn, lastMessageTimestamp uint64, regexGroupId *regexp.Regexp, regexNumber *regexp.Regexp, gameService service.GameService) *WhatsappHandlerImpl {
+	return &WhatsappHandlerImpl{conn: conn, lastMessageTimestamp: lastMessageTimestamp, regexGroupId: regexGroupId, regexNumber: regexNumber, GameService: gameService}
 }
 
 func (handler *WhatsappHandlerImpl) HandleError(err error) {
@@ -50,7 +54,7 @@ func (handler *WhatsappHandlerImpl) HandleError(err error) {
 }
 
 func (handler *WhatsappHandlerImpl) HandleTextMessage(message whatsapp.TextMessage) {
-	if message.Info.FromMe || message.Info.Timestamp < handler.lastMessageTimestamp {
+	if message.Info.Timestamp < handler.lastMessageTimestamp {
 		return
 	}
 
@@ -66,8 +70,7 @@ func (handler *WhatsappHandlerImpl) HandleTextMessage(message whatsapp.TextMessa
 
 		_, err = handler.conn.Send(webMessageInfo)
 		exception.LogIfError(err)
-	} else if (message.Text == "!everyone" || strings.Contains(message.Text, "!everyone")) &&
-		matchGroupJID {
+	} else if (message.Text == "!everyone" || strings.Contains(message.Text, "!everyone")) && matchGroupJID {
 		_, err := handler.conn.Read(message.Info.RemoteJid, message.Info.Id)
 		exception.LogIfError(err)
 
@@ -77,6 +80,64 @@ func (handler *WhatsappHandlerImpl) HandleTextMessage(message whatsapp.TextMessa
 
 		_, err = handler.conn.Send(webMessageInfo)
 		exception.LogIfError(err)
+	} else if !handler.GameService.Valid(message.Info.Timestamp) &&
+		strings.Contains(message.Text, "!play") && matchGroupJID {
+
+		_, err := handler.conn.Read(message.Info.RemoteJid, message.Info.Id)
+		exception.LogIfError(err)
+
+		text := "*[🎮 GAME BY MEGUMIN]*\n\nPermainan tebak-tebakan angka\nTebak angka dari 1 sampai 10\nWaktunya 20 detik mulai dari sekarang!\n\n*Game Dimulai*"
+		handler.GameService.RandomGuestNumber()
+		participants := handler.getGroupParticipantsJIDs(message.Info.RemoteJid)
+		webMessageInfo := handler.generateWebMessageInfo(message, text, participants)
+
+		time.AfterFunc(21*time.Second, func() {
+			if !handler.GameService.Valid(message.Info.Timestamp) {
+				_, err = handler.conn.Send(whatsapp.TextMessage{
+					Info: whatsapp.MessageInfo{
+						RemoteJid: message.Info.RemoteJid,
+					},
+					Text: "Wwkwkkw kalah kok sama bot\n\n*GAME BERAKHIR*",
+				})
+				exception.LogIfError(err)
+			}
+			handler.GameService.End(0)
+		})
+
+		_, err = handler.conn.Send(webMessageInfo)
+		exception.LogIfError(err)
+
+		//go func(remoteJID string, timestamp uint64) {
+		//	time.Sleep(20 * time.Second)
+		//	if !handler.GameService.Valid(timestamp) {
+		//		_, err = handler.conn.Send(whatsapp.TextMessage{
+		//			Info: whatsapp.MessageInfo{
+		//				RemoteJid: remoteJID,
+		//			},
+		//			Text: "Wwkwkkw kalah kok sama bot\n\n*GAME BERAKHIR*",
+		//		})
+		//		exception.LogIfError(err)
+		//	}
+		//}(message.Info.RemoteJid, message.Info.Timestamp)
+	} else if handler.GameService.Valid(message.Info.Timestamp) && handler.regexNumber.MatchString(message.Text) && matchGroupJID {
+		_, err := handler.conn.Read(message.Info.RemoteJid, message.Info.Id)
+		exception.LogIfError(err)
+
+		atoi, err := strconv.Atoi(message.Text)
+		exception.LogIfError(err)
+
+		randomNumber := handler.GameService.GetNumber()
+		if atoi == randomNumber {
+			handler.GameService.End(0)
+			var participant []string
+			participant = append(participant, strings.Replace(message.Info.SenderJid, "c.us", "s.whatsapp.net", 1))
+			webMessageInfo := handler.generateWebMessageInfoQuoted(message,
+				fmt.Sprintf("Selamat @%s tebakan kamu benar! Congratulations desuu~\n\n*Game Berakhir*",
+					strings.Split(participant[0], "@")[0]), participant)
+
+			_, err = handler.conn.Send(webMessageInfo)
+			exception.LogIfError(err)
+		}
 	}
 }
 
@@ -109,8 +170,6 @@ func (handler *WhatsappHandlerImpl) generateWebMessageInfo(message whatsapp.Text
 	now := uint64(time.Now().Unix())
 	status := proto.WebMessageInfo_PENDING
 	id := handler.generateID()
-
-	fmt.Println("Generated")
 
 	return &proto.WebMessageInfo{
 		Key: &proto.MessageKey{
