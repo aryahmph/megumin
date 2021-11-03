@@ -15,7 +15,7 @@ import (
 func main() {
 	conn, err := whatsapp.NewConn(5 * time.Second)
 	exception.LogIfError(err)
-	conn.SetClientVersion(2, 2121, 17)
+	conn.SetClientVersion(3, 3234, 9)
 
 	now := time.Now().Unix()
 	regexGroupId, err := regexp.Compile(`@g.us$`)
