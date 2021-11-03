@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/Rhymen/go-whatsapp"
 	"github.com/Rhymen/go-whatsapp/binary/proto"
 	"log"
@@ -18,7 +19,9 @@ type WhatsappHandler interface {
 	HandleError(err error)
 	HandleTextMessage(message whatsapp.TextMessage)
 	generateWebMessageInfo(message whatsapp.TextMessage, text string, participantsJIDs []string) *proto.WebMessageInfo
+	generateWebMessageInfoQuoted(message whatsapp.TextMessage, text string, participantsJIDs []string) *proto.WebMessageInfo
 	getGroupParticipantsJIDs(remoteJid string) []string
+	generateID() string
 }
 
 type WhatsappHandlerImpl struct {
@@ -51,13 +54,26 @@ func (handler *WhatsappHandlerImpl) HandleTextMessage(message whatsapp.TextMessa
 		return
 	}
 
-	if message.Text == "!absen" && handler.regexGroupId.MatchString(message.Info.RemoteJid) {
+	matchGroupJID := handler.regexGroupId.MatchString(message.Info.RemoteJid)
+
+	if message.Text == "!absen" && matchGroupJID {
 		_, err := handler.conn.Read(message.Info.RemoteJid, message.Info.Id)
 		exception.LogIfError(err)
 
-		text := "[📅 ABSEN BY MEGUMIN]\n\nJangan lupa absen yaw guys!\nLink absen : https://linktr.ee/aryahmph\n\n^Megumin~"
+		text := "*[📅📌 ABSEN BY MEGUMIN]*\n\nJangan lupa absen yaw guys!\nLink absen : https://linktr.ee/aryahmph\n\n^Megumin~"
 		participants := handler.getGroupParticipantsJIDs(message.Info.RemoteJid)
 		webMessageInfo := handler.generateWebMessageInfo(message, text, participants)
+
+		_, err = handler.conn.Send(webMessageInfo)
+		exception.LogIfError(err)
+	} else if (message.Text == "!everyone" || strings.Contains(message.Text, "!everyone")) &&
+		matchGroupJID {
+		_, err := handler.conn.Read(message.Info.RemoteJid, message.Info.Id)
+		exception.LogIfError(err)
+
+		text := "*Tolong dibaca yaa!*"
+		participants := handler.getGroupParticipantsJIDs(message.Info.RemoteJid)
+		webMessageInfo := handler.generateWebMessageInfoQuoted(message, text, participants)
 
 		_, err = handler.conn.Send(webMessageInfo)
 		exception.LogIfError(err)
@@ -81,15 +97,20 @@ func (handler *WhatsappHandlerImpl) getGroupParticipantsJIDs(remoteJid string) [
 	return participants
 }
 
-func (handler *WhatsappHandlerImpl) generateWebMessageInfo(message whatsapp.TextMessage, text string, participantsJIDs []string) *proto.WebMessageInfo {
-	// Generate ID
+func (handler *WhatsappHandlerImpl) generateID() string {
 	b := make([]byte, 10)
 	rand.Read(b)
+	return strings.ToUpper(hex.EncodeToString(b))
+}
 
+func (handler *WhatsappHandlerImpl) generateWebMessageInfo(message whatsapp.TextMessage,
+	text string, participantsJIDs []string) *proto.WebMessageInfo {
 	isTrue := true
 	now := uint64(time.Now().Unix())
 	status := proto.WebMessageInfo_PENDING
-	id := strings.ToUpper(hex.EncodeToString(b))
+	id := handler.generateID()
+
+	fmt.Println("Generated")
 
 	return &proto.WebMessageInfo{
 		Key: &proto.MessageKey{
@@ -103,6 +124,36 @@ func (handler *WhatsappHandlerImpl) generateWebMessageInfo(message whatsapp.Text
 			ExtendedTextMessage: &proto.ExtendedTextMessage{
 				Text: &text,
 				ContextInfo: &proto.ContextInfo{
+					MentionedJid: participantsJIDs,
+				},
+			},
+		},
+	}
+}
+
+func (handler *WhatsappHandlerImpl) generateWebMessageInfoQuoted(message whatsapp.TextMessage, text string, participantsJIDs []string) *proto.WebMessageInfo {
+	isTrue := true
+	now := uint64(time.Now().Unix())
+	status := proto.WebMessageInfo_PENDING
+	id := handler.generateID()
+
+	return &proto.WebMessageInfo{
+		Key: &proto.MessageKey{
+			RemoteJid: &message.Info.RemoteJid,
+			Id:        &id,
+			FromMe:    &isTrue,
+		},
+		Status:           &status,
+		MessageTimestamp: &now,
+		Message: &proto.Message{
+			ExtendedTextMessage: &proto.ExtendedTextMessage{
+				Text: &text,
+				ContextInfo: &proto.ContextInfo{
+					StanzaId: &message.Info.Id,
+					QuotedMessage: &proto.Message{
+						Conversation: &message.Text,
+					},
+					Participant:  &message.Info.SenderJid,
 					MentionedJid: participantsJIDs,
 				},
 			},
