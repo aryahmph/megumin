@@ -60,7 +60,17 @@ func (handler *WhatsappHandlerImpl) HandleTextMessage(message whatsapp.TextMessa
 
 	matchGroupJID := handler.regexGroupId.MatchString(message.Info.RemoteJid)
 
-	if message.Text == "!absen" && matchGroupJID {
+	if message.Text == "!intro" {
+		_, err := handler.conn.Read(message.Info.RemoteJid, message.Info.Id)
+		exception.LogIfError(err)
+
+		text := "Halo, kenalin nama aku Megumin\n\nSalam kenal yaa 😊"
+		_, err = handler.conn.Send(whatsapp.TextMessage{
+			Info: whatsapp.MessageInfo{RemoteJid: message.Info.RemoteJid},
+			Text: text,
+		})
+		exception.LogIfError(err)
+	} else if message.Text == "!absen" && matchGroupJID {
 		_, err := handler.conn.Read(message.Info.RemoteJid, message.Info.Id)
 		exception.LogIfError(err)
 

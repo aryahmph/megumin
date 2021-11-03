@@ -1,1 +1,1 @@
-web: bin/megumin
+worker: bin/megumin
